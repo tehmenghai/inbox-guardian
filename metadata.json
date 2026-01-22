@@ -1,0 +1,5 @@
+{
+  "name": "Inbox Guardian",
+  "description": "An AI-powered email housekeeping agent that intelligently categorizes, summarizes, and cleans up email clutter using Google Gemini.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,53 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Build
+        working-directory: ./server
+        run: npm run build
+
+      - name: Create deployment package
+        run: |
+          cd server
+          zip -r ../server-deploy.zip . \
+            -x "node_modules/*" \
+            -x ".git/*" \
+            -x "*.log"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp server-deploy.zip \
+            s3://${{ secrets.DEPLOY_BUCKET }}/server/server-deploy.zip
+
+      - name: Deploy via CodeDeploy
+        run: |
+          aws deploy create-deployment \
+            --application-name inbox-guardian-server \
+            --deployment-group-name production \
+            --s3-location bucket=${{ secrets.DEPLOY_BUCKET }},key=server/server-deploy.zip,bundleType=zip
