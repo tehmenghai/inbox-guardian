@@ -376,10 +376,17 @@ export class YahooImapService {
           }
         }
 
-        resolve({
-          success: failedIds.length === 0,
-          trashedCount: trashedIds.length,
-          failedIds,
+        // Close the box with expunge=true to sync the mailbox state
+        // This ensures moved messages are properly removed from the inbox view
+        imap.closeBox(true, (closeErr) => {
+          if (closeErr) {
+            console.error(`[YahooIMAP] Failed to close/expunge:`, closeErr.message);
+          }
+          resolve({
+            success: failedIds.length === 0,
+            trashedCount: trashedIds.length,
+            failedIds,
+          });
         });
       });
     });
