@@ -14,6 +14,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
   const [showConfig, setShowConfig] = useState(false);
   const [googleClientId, setGoogleClientId] = useState('');
   const [showYahooForm, setShowYahooForm] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [yahooEmail, setYahooEmail] = useState('');
   const [yahooAppPassword, setYahooAppPassword] = useState('');
   const [yahooLoading, setYahooLoading] = useState(false);
@@ -22,6 +23,22 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
 
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+  // Debug helper
+  const addDebug = (msg: string) => {
+    setDebugInfo(prev => [...prev.slice(-9), `${new Date().toLocaleTimeString()}: ${msg}`]);
+  };
+
+  // Check Google scripts on mount
+  useEffect(() => {
+    const checkGoogle = () => {
+      const hasGapi = !!(window as any).gapi;
+      const hasGoogle = !!(window as any).google;
+      addDebug(`Google scripts: gapi=${hasGapi}, google=${hasGoogle}`);
+    };
+    // Check after a delay to allow scripts to load
+    setTimeout(checkGoogle, 2000);
+  }, []);
 
   // Load saved Yahoo credentials on mount
   useEffect(() => {
@@ -107,7 +124,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
 
       <div className="w-full max-w-sm space-y-4">
         <button
-          onClick={() => onLogin('google', googleClientId)}
+          onClick={() => {
+            const hasGapi = !!(window as any).gapi;
+            const hasGoogle = !!(window as any).google;
+            addDebug(`Login clicked: gapi=${hasGapi}, google=${hasGoogle}`);
+            if (!hasGapi || !hasGoogle) {
+              addDebug('ERROR: Google scripts not loaded!');
+            }
+            onLogin('google', googleClientId);
+          }}
           className="w-full group relative flex items-center justify-center gap-3 px-8 py-4 bg-white border border-slate-200 hover:border-indigo-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
         >
           <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6" alt="Google" />
@@ -284,6 +309,20 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
           </div>
         )}
       </div>
+
+      {/* Debug Panel - tap to show */}
+      {debugInfo.length > 0 && (
+        <div className="mt-6 w-full max-w-sm">
+          <details className="bg-slate-100 rounded-lg p-2">
+            <summary className="text-xs text-slate-500 cursor-pointer">Debug Log ({debugInfo.length})</summary>
+            <div className="mt-2 text-[10px] font-mono text-slate-600 space-y-1 max-h-32 overflow-y-auto">
+              {debugInfo.map((msg, i) => (
+                <div key={i} className="bg-white p-1 rounded">{msg}</div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
 
       <div className="mt-12 flex items-center gap-8 text-sm text-slate-400">
         <div className="flex items-center gap-2">
