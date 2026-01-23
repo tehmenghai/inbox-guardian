@@ -15,6 +15,31 @@ export interface MailboxProvider {
 // Yahoo backend API URL - Use environment variable for production
 const YAHOO_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/yahoo';
 
+// Timeout wrapper for fetch requests
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = 55000): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. The server is taking too long to respond. Please try again.');
+    }
+    // Check for network/CORS errors which often manifest as TypeError
+    if (error instanceof TypeError && error.message === 'Load failed') {
+      throw new Error('Connection failed. Please check your internet connection and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 export const PROVIDER_CONFIG: Record<MailboxProviderType, { name: string; scopes: string[], authEndpoint: string }> = {
   google: {
     name: 'Google Gmail',
@@ -75,11 +100,11 @@ class MailboxService implements MailboxProvider {
     this.providerName = 'Yahoo Mail';
 
     try {
-      const response = await fetch(`${YAHOO_API_BASE}/connect`, {
+      const response = await fetchWithTimeout(`${YAHOO_API_BASE}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, appPassword })
-      });
+      }, 30000); // 30 second timeout for connect
 
       const data = await response.json();
 
@@ -194,8 +219,10 @@ class MailboxService implements MailboxProvider {
     console.log("[MailboxService] Fetching emails from Yahoo via backend...");
 
     try {
-      const response = await fetch(
-        `${YAHOO_API_BASE}/emails?email=${encodeURIComponent(this.yahooEmail!)}&limit=${limit}`
+      const response = await fetchWithTimeout(
+        `${YAHOO_API_BASE}/emails?email=${encodeURIComponent(this.yahooEmail!)}&limit=${limit}`,
+        {},
+        55000 // 55 second timeout (CloudFront is 60s)
       );
 
       const data = await response.json();
@@ -422,14 +449,14 @@ class MailboxService implements MailboxProvider {
     console.log("[MailboxService] Moving Yahoo emails to trash via backend...", emailIds.length, "emails");
 
     try {
-      const response = await fetch(`${YAHOO_API_BASE}/trash`, {
+      const response = await fetchWithTimeout(`${YAHOO_API_BASE}/trash`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: this.yahooEmail,
           messageIds: emailIds
         })
-      });
+      }, 55000);
 
       const data = await response.json();
 
@@ -639,8 +666,10 @@ class MailboxService implements MailboxProvider {
     try {
       console.log("[MailboxService] Fetching full email content from Yahoo via backend...");
 
-      const response = await fetch(
-        `${YAHOO_API_BASE}/email/${emailId}?email=${encodeURIComponent(this.yahooEmail!)}`
+      const response = await fetchWithTimeout(
+        `${YAHOO_API_BASE}/email/${emailId}?email=${encodeURIComponent(this.yahooEmail!)}`,
+        {},
+        30000 // 30 second timeout for single email
       );
 
       const data = await response.json();

@@ -121,7 +121,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
             onClick={() => setShowYahooForm(!showYahooForm)}
             className="w-full group relative flex items-center justify-center gap-3 px-8 py-4 hover:bg-slate-50 transition-all duration-200"
           >
-            <img src="https://upload.wikimedia.org/wikipedia/commons/a/ad/Yahoo_Mail_icon.svg" className="w-6 h-6" alt="Yahoo Mail" />
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#6001D2"/>
+              <path d="M8.5 8l3.5 4.5L8.5 17h2l2.5-3.2L15.5 17h2l-3.5-4.5L17.5 8h-2l-2.5 3.2L10.5 8h-2z" fill="white"/>
+            </svg>
             <span className="font-semibold text-slate-700 group-hover:text-indigo-600">Continue with Yahoo</span>
             {showYahooForm ? (
               <ChevronUp className="w-4 h-4 text-slate-400 absolute right-4" />
