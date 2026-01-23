@@ -33,11 +33,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
   useEffect(() => {
     const checkGoogle = () => {
       const hasGapi = !!(window as any).gapi;
-      const hasGoogle = !!(window as any).google;
-      addDebug(`Google scripts: gapi=${hasGapi}, google=${hasGoogle}`);
+      addDebug(`GAPI script loaded: ${hasGapi}`);
+      // Check for OAuth redirect token
+      if (window.location.hash.includes('access_token')) {
+        addDebug('OAuth redirect detected with token');
+      }
     };
     // Check after a delay to allow scripts to load
-    setTimeout(checkGoogle, 2000);
+    setTimeout(checkGoogle, 1000);
   }, []);
 
   // Load saved Yahoo credentials on mount
@@ -126,11 +129,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
         <button
           onClick={() => {
             const hasGapi = !!(window as any).gapi;
-            const hasGoogle = !!(window as any).google;
-            addDebug(`Login clicked: gapi=${hasGapi}, google=${hasGoogle}`);
-            if (!hasGapi || !hasGoogle) {
-              addDebug('ERROR: Google scripts not loaded!');
-            }
+            addDebug(`Login clicked: gapi=${hasGapi}, redirecting to Google...`);
             onLogin('google', googleClientId);
           }}
           className="w-full group relative flex items-center justify-center gap-3 px-8 py-4 bg-white border border-slate-200 hover:border-indigo-300 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"

@@ -67,6 +67,59 @@ class MailboxService implements MailboxProvider {
   private tokenClient: any;
   private clientId = DEFAULT_GOOGLE_CLIENT_ID;
   private yahooEmail: string | null = null;
+  private accessToken: string | null = null;
+
+  constructor() {
+    // Check for OAuth redirect response on initialization
+    this.handleOAuthRedirect();
+  }
+
+  // Handle OAuth redirect response (token in URL hash)
+  private handleOAuthRedirect(): void {
+    if (typeof window === 'undefined') return;
+
+    const hash = window.location.hash;
+    if (!hash || !hash.includes('access_token')) return;
+
+    // Parse the hash fragment
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    const error = params.get('error');
+
+    if (error) {
+      console.error('[MailboxService] OAuth redirect error:', error);
+      // Clear the hash
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return;
+    }
+
+    if (accessToken) {
+      console.log('[MailboxService] OAuth redirect: token received');
+      this.accessToken = accessToken;
+      this.isAuthenticated = true;
+      this.useMock = false;
+      this.providerName = 'Google Gmail';
+
+      // Store token in sessionStorage for persistence during session
+      sessionStorage.setItem('gmail_access_token', accessToken);
+
+      // Clear the hash from URL for cleaner appearance
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
+  // Check if we have a valid session from previous OAuth redirect
+  checkExistingSession(): boolean {
+    const storedToken = sessionStorage.getItem('gmail_access_token');
+    if (storedToken) {
+      this.accessToken = storedToken;
+      this.isAuthenticated = true;
+      this.useMock = false;
+      this.providerName = 'Google Gmail';
+      return true;
+    }
+    return false;
+  }
 
   async connect(provider: MailboxProviderType, customClientId?: string): Promise<void> {
     const config = PROVIDER_CONFIG[provider];
@@ -142,48 +195,72 @@ class MailboxService implements MailboxProvider {
 
   private async connectToRealGmail(): Promise<void> {
     console.log("[MailboxService] Initializing Real Google Auth with ID:", this.clientId);
-    
+
+    // Check if we already have a token from OAuth redirect or session
+    if (this.accessToken) {
+      console.log("[MailboxService] Using existing access token");
+      // Initialize GAPI client with existing token
+      return this.initializeGapiWithToken();
+    }
+
+    // Check sessionStorage for existing token
+    const storedToken = sessionStorage.getItem('gmail_access_token');
+    if (storedToken) {
+      console.log("[MailboxService] Using stored access token from session");
+      this.accessToken = storedToken;
+      return this.initializeGapiWithToken();
+    }
+
+    // No token - redirect to Google OAuth
+    console.log("[MailboxService] No token found, redirecting to Google OAuth...");
+    this.redirectToGoogleOAuth();
+
+    // This promise won't resolve - page will redirect
+    return new Promise(() => {});
+  }
+
+  private redirectToGoogleOAuth(): void {
+    const redirectUri = window.location.origin + window.location.pathname;
+    const scopes = PROVIDER_CONFIG.google.scopes.join(' ');
+
+    // Build OAuth URL for implicit grant flow (token in URL fragment)
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', this.clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'token');
+    authUrl.searchParams.set('scope', scopes);
+    authUrl.searchParams.set('include_granted_scopes', 'true');
+    authUrl.searchParams.set('prompt', 'consent');
+
+    console.log("[MailboxService] Redirecting to:", authUrl.toString());
+
+    // Redirect to Google OAuth
+    window.location.href = authUrl.toString();
+  }
+
+  private async initializeGapiWithToken(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const initializeGapiClient = async () => {
+      const initializeClient = async () => {
         try {
           await window.gapi.client.init({
             apiKey: GOOGLE_API_KEY !== 'YOUR_GOOGLE_API_KEY' ? GOOGLE_API_KEY : undefined,
             discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest'],
           });
-          
-          this.tokenClient = window.google.accounts.oauth2.initTokenClient({
-            client_id: this.clientId,
-            scope: PROVIDER_CONFIG.google.scopes.join(' '),
-            callback: (resp: any) => {
-              if (resp.error) {
-                console.error("Auth callback error:", resp);
-                reject(resp);
-                return;
-              }
-              if (resp.access_token) {
-                 this.isAuthenticated = true;
-                 console.log("[MailboxService] Authenticated with Google!");
-                 resolve();
-              } else {
-                 reject(new Error("No access token received"));
-              }
-            },
-          });
 
-          // Trigger the popup
-          // Note: If the Client ID is invalid or origin mismatch, 
-          // the popup will show a 400 error and callback might not fire, 
-          // or fire with an error field depending on the failure mode.
-          this.tokenClient.requestAccessToken({ prompt: 'consent' });
+          // Set the access token for GAPI client
+          window.gapi.client.setToken({ access_token: this.accessToken });
 
+          this.isAuthenticated = true;
+          console.log("[MailboxService] GAPI initialized with access token!");
+          resolve();
         } catch (error) {
           console.error("GAPI Init Error", error);
           reject(error);
         }
       };
 
-      if (window.gapi && window.google) {
-        window.gapi.load('client', initializeGapiClient);
+      if (window.gapi) {
+        window.gapi.load('client', initializeClient);
       } else {
         reject(new Error("Google API scripts not loaded. Check your internet connection."));
       }
@@ -680,8 +757,16 @@ class MailboxService implements MailboxProvider {
 
       const emailDetail = data.email;
 
+      // Use server's data for header fields - this is the ACTUAL email content
+      // Don't rely on basicEmail which may be stale/mismatched
       return {
-        ...basicEmail,
+        id: emailDetail.id || basicEmail.id,
+        subject: emailDetail.subject || basicEmail.subject,
+        sender: emailDetail.sender || basicEmail.sender,
+        senderEmail: emailDetail.senderEmail || basicEmail.senderEmail,
+        date: emailDetail.date || basicEmail.date,
+        snippet: emailDetail.snippet || basicEmail.snippet,
+        isRead: emailDetail.isRead ?? basicEmail.isRead,
         body: emailDetail.body || basicEmail.snippet,
         bodyText: emailDetail.bodyText || basicEmail.snippet,
         attachments: emailDetail.attachments || [],

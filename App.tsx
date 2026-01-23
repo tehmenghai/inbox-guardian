@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   ShieldCheck,
   LogOut
@@ -18,6 +18,7 @@ import SuccessScreen from './components/SuccessScreen';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('auth');
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [senderGroups, setSenderGroups] = useState<SenderGroup[]>([]);
   const [selectedSenderEmail, setSelectedSenderEmail] = useState<string | null>(null);
   const [emailAnalysisCache, setEmailAnalysisCache] = useState<Map<string, AIAnalysisResult>>(new Map());
@@ -37,6 +38,47 @@ const App: React.FC = () => {
   const [emailAIAnalysis, setEmailAIAnalysis] = useState<EmailAIAnalysis | null>(null);
   const [isLoadingEmailDetail, setIsLoadingEmailDetail] = useState(false);
   const [isAnalyzingEmailDetail, setIsAnalyzingEmailDetail] = useState(false);
+
+  // Check for OAuth redirect or existing session on mount
+  useEffect(() => {
+    if (initialCheckDone) return;
+
+    // Check if we returned from Google OAuth redirect (token in URL or session)
+    if (mailboxService.isAuthenticated) {
+      console.log('[App] Found existing Google session, starting email fetch...');
+      setInitialCheckDone(true);
+      startScanningAfterAuth();
+    } else {
+      setInitialCheckDone(true);
+    }
+  }, [initialCheckDone]);
+
+  // Separate function for scanning after OAuth redirect (already authenticated)
+  const startScanningAfterAuth = async () => {
+    setIsProcessing(true);
+    setView('scanning');
+
+    try {
+      setProcessingStage('Initializing Google API...');
+      // Complete the GAPI initialization with the existing token
+      await mailboxService.connect('google');
+
+      setProcessingStage('Fetching emails...');
+      const fetchedEmails = await mailboxService.fetchUnreadEmails(300);
+
+      setProcessingStage('Grouping by sender...');
+      const groups = groupEmailsBySender(fetchedEmails);
+
+      setSenderGroups(groups);
+      setIsProcessing(false);
+      setView('senderGroups');
+    } catch (error: any) {
+      console.error("Post-OAuth scanning failed", error);
+      setIsProcessing(false);
+      setAuthError(error.message || 'Failed to connect to Gmail after authentication');
+      setView('auth');
+    }
+  };
 
   const handleLogin = (provider: MailboxProviderType, clientId?: string) => {
     setAuthError(null);
@@ -318,11 +360,15 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    // Clear Gmail session token from storage
+    sessionStorage.removeItem('gmail_access_token');
+
     setView('auth');
     setSenderGroups([]);
     setSelectedSenderEmail(null);
     setEmailAnalysisCache(new Map());
     setAuthError(null);
+    setInitialCheckDone(false);
   };
 
   const handleSuccess = () => {

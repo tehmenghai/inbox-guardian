@@ -162,11 +162,12 @@ export class YahooImapService {
           return;
         }
 
-        // Fetch most recent emails
+        // Fetch most recent emails using sequence numbers for range
         const start = Math.max(1, totalMessages - limit + 1);
         const range = `${start}:${totalMessages}`;
 
         const emails: YahooEmail[] = [];
+        // Use seq.fetch but get the UID from attributes for stable IDs
         const fetch = imap.seq.fetch(range, {
           bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE)', 'TEXT'],
           struct: true,
@@ -176,9 +177,9 @@ export class YahooImapService {
           let header = '';
           let body = '';
           const emailData: Partial<YahooEmail> = {
-            id: `yahoo-${seqno}`,
             isRead: true,
           };
+          let uid: number | undefined;
 
           msg.on('body', (stream, info) => {
             let buffer = '';
@@ -195,11 +196,16 @@ export class YahooImapService {
           });
 
           msg.once('attributes', (attrs) => {
+            // Get the UID - this is a permanent identifier that doesn't change
+            uid = attrs.uid;
             // Check if SEEN flag is present
             emailData.isRead = attrs.flags?.includes('\\Seen') ?? false;
           });
 
           msg.once('end', () => {
+            // Use UID for stable ID instead of sequence number
+            emailData.id = `yahoo-uid-${uid}`;
+
             // Parse header
             const fromMatch = header.match(/From:\s*(.+)/i);
             const subjectMatch = header.match(/Subject:\s*(.+)/i);
@@ -218,7 +224,7 @@ export class YahooImapService {
             emailData.date = dateMatch ? new Date(dateMatch[1]).toISOString() : new Date().toISOString();
             emailData.snippet = body.substring(0, 200).replace(/\s+/g, ' ').trim() || '';
 
-            if (emailData.senderEmail) {
+            if (emailData.senderEmail && uid) {
               emails.push(emailData as YahooEmail);
             }
           });
@@ -240,9 +246,16 @@ export class YahooImapService {
   static async fetchEmailDetail(email: string, messageId: string): Promise<YahooEmailDetail> {
     const imap = await this.ensureConnected(email);
 
-    // Extract sequence number from ID (format: yahoo-123)
-    const seqno = parseInt(messageId.replace('yahoo-', ''), 10);
-    if (isNaN(seqno)) {
+    // Extract UID from ID (format: yahoo-uid-123 or legacy yahoo-123)
+    let uid: number;
+    if (messageId.startsWith('yahoo-uid-')) {
+      uid = parseInt(messageId.replace('yahoo-uid-', ''), 10);
+    } else {
+      // Legacy format support (will be inaccurate but maintains backwards compatibility)
+      uid = parseInt(messageId.replace('yahoo-', ''), 10);
+    }
+
+    if (isNaN(uid)) {
       throw new Error(`Invalid message ID: ${messageId}`);
     }
 
@@ -253,7 +266,8 @@ export class YahooImapService {
           return;
         }
 
-        const fetch = imap.seq.fetch(seqno, {
+        // Use UID-based fetch instead of sequence number
+        const fetch = imap.fetch(uid, {
           bodies: '',
           struct: true,
         });
@@ -330,17 +344,23 @@ export class YahooImapService {
 
         for (const msgId of messageIds) {
           try {
-            // Extract sequence number from ID (format: yahoo-123)
-            const seqno = parseInt(msgId.replace('yahoo-', ''), 10);
+            // Extract UID from ID (format: yahoo-uid-123 or legacy yahoo-123)
+            let uid: number;
+            if (msgId.startsWith('yahoo-uid-')) {
+              uid = parseInt(msgId.replace('yahoo-uid-', ''), 10);
+            } else {
+              // Legacy format support
+              uid = parseInt(msgId.replace('yahoo-', ''), 10);
+            }
 
-            if (isNaN(seqno)) {
+            if (isNaN(uid)) {
               failedIds.push(msgId);
               continue;
             }
 
-            await new Promise<void>((resolveMove, rejectMove) => {
-              // Move to Trash folder (Yahoo uses "Trash" folder)
-              imap.seq.move(seqno, 'Trash', (moveErr) => {
+            await new Promise<void>((resolveMove) => {
+              // Move to Trash folder using UID (Yahoo uses "Trash" folder)
+              imap.move(uid, 'Trash', (moveErr) => {
                 if (moveErr) {
                   console.error(`[YahooIMAP] Failed to trash ${msgId}:`, moveErr.message);
                   failedIds.push(msgId);
