@@ -51,8 +51,19 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
   const [showReplyDraft, setShowReplyDraft] = useState(false);
   const [replyContent, setReplyContent] = useState('');
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string, short = false) => {
     const date = new Date(dateStr);
+    if (short) {
+      const now = new Date();
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays === 0) {
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      }
+      if (diffDays < 7) {
+        return date.toLocaleDateString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      }
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -148,8 +159,64 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
 
       <div className="flex-1 overflow-y-auto pb-6">
         {/* Email Header Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 mb-4 shadow-sm">
-          <div className="flex items-start gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 mb-4 shadow-sm">
+          {/* Mobile Layout */}
+          <div className="flex flex-col gap-3 sm:hidden">
+            {/* Row 1: Avatar + Sender + Analyze Button */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
+                {email.sender.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-slate-900 text-sm truncate">{email.sender}</p>
+                <p className="text-xs text-slate-500 truncate">{email.senderEmail}</p>
+              </div>
+              <button
+                onClick={onAnalyze}
+                disabled={isAnalyzing || !!analysis}
+                className={`p-2 rounded-lg flex items-center gap-1 transition-all flex-shrink-0 ${
+                  analysis
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {isAnalyzing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : analysis ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+
+            {/* Row 2: Subject */}
+            <h1 className="text-base font-bold text-slate-900 leading-tight">
+              {email.subject || '(No Subject)'}
+            </h1>
+
+            {/* Row 3: Date + Unread badge + Attachments */}
+            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500">
+              <div className="flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                {formatDate(email.date, true)}
+              </div>
+              {!email.isRead && (
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                  Unread
+                </span>
+              )}
+              {email.attachments && email.attachments.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  {email.attachments.length}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop Layout */}
+          <div className="hidden sm:flex items-start gap-4">
             {/* Sender Avatar */}
             <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
               {email.sender.charAt(0).toUpperCase()}
@@ -160,9 +227,9 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
               <h1 className="text-xl font-bold text-slate-900 mb-2">{email.subject || '(No Subject)'}</h1>
 
               {/* Sender Info */}
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <span className="font-medium text-slate-800">{email.sender}</span>
-                <span className="text-slate-400">&lt;{email.senderEmail}&gt;</span>
+                <span className="text-slate-400 text-sm">&lt;{email.senderEmail}&gt;</span>
               </div>
 
               {/* Date */}
@@ -219,7 +286,7 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
 
         {/* AI Analysis Panel */}
         {analysis && (
-          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 p-6 mb-4">
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 p-4 sm:p-6 mb-4">
             {/* Analysis Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -283,9 +350,9 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
 
                 {/* Extracted Information */}
                 {analysis.extractedInfo && (
-                  <div className="bg-white/60 rounded-lg p-4 mb-4">
-                    <h3 className="font-medium text-slate-700 mb-3">Extracted Information</h3>
-                    <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white/60 rounded-lg p-3 sm:p-4 mb-4">
+                    <h3 className="font-medium text-slate-700 mb-3 text-sm sm:text-base">Extracted Information</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {analysis.extractedInfo.dates && analysis.extractedInfo.dates.length > 0 && (
                         <div className="flex items-start gap-2">
                           <Calendar className="w-4 h-4 text-blue-500 mt-0.5" />
@@ -323,7 +390,7 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
                         </div>
                       )}
                       {analysis.extractedInfo.links && analysis.extractedInfo.links.length > 0 && (
-                        <div className="flex items-start gap-2 col-span-2">
+                        <div className="flex items-start gap-2 sm:col-span-2">
                           <Link className="w-4 h-4 text-indigo-500 mt-0.5" />
                           <div>
                             <span className="text-xs text-slate-500">Links</span>
@@ -432,46 +499,81 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
         )}
 
         {/* Email Body */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="font-medium text-slate-700 mb-4 pb-2 border-b border-slate-100">Email Content</h3>
+        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm">
+          <h3 className="font-medium text-slate-700 mb-3 sm:mb-4 pb-2 border-b border-slate-100 text-sm sm:text-base">Email Content</h3>
           <div
-            className="prose prose-slate max-w-none"
+            className="prose prose-slate prose-sm sm:prose max-w-none overflow-x-auto"
             dangerouslySetInnerHTML={{ __html: email.body || email.bodyText || email.snippet }}
           />
         </div>
       </div>
 
       {/* Bottom Action Bar - Always visible */}
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-full max-w-xl px-4 z-20">
-        <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="font-bold">Quick Actions</span>
-            <span className="text-xs text-slate-400">
-              {analysis ? 'AI analysis complete' : 'Or analyze with AI for smart suggestions'}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            {!analysis && (
+      <div className="fixed bottom-4 sm:bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] sm:w-full max-w-xl z-20">
+        <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl">
+          {/* Mobile Layout */}
+          <div className="flex sm:hidden items-center justify-between gap-2">
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-sm">Quick Actions</span>
+              <span className="text-xs text-slate-400 truncate">
+                {analysis ? 'AI analysis complete' : 'Analyze for suggestions'}
+              </span>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              {!analysis && (
+                <button
+                  onClick={onAnalyze}
+                  disabled={isAnalyzing}
+                  className="p-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-50"
+                >
+                  {isAnalyzing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                </button>
+              )}
               <button
-                onClick={onAnalyze}
-                disabled={isAnalyzing}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 disabled:opacity-50"
+                onClick={onTrash}
+                className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-1.5 text-sm font-medium"
               >
-                {isAnalyzing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
-                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                <Trash2 className="w-4 h-4" />
+                Delete
               </button>
-            )}
-            <button
-              onClick={onTrash}
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-2"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
+            </div>
+          </div>
+
+          {/* Desktop Layout */}
+          <div className="hidden sm:flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="font-bold">Quick Actions</span>
+              <span className="text-xs text-slate-400">
+                {analysis ? 'AI analysis complete' : 'Or analyze with AI for smart suggestions'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              {!analysis && (
+                <button
+                  onClick={onAnalyze}
+                  disabled={isAnalyzing}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isAnalyzing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                </button>
+              )}
+              <button
+                onClick={onTrash}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       </div>
