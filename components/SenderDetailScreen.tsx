@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { SenderGroup, Email, AIAnalysisResult } from '../types';
 import {
   ArrowLeft,
@@ -17,14 +17,15 @@ import {
 interface SenderDetailScreenProps {
   senderGroup: SenderGroup;
   emailAnalysis: Map<string, AIAnalysisResult>;
-  onBack: () => void;
+  onBack: (scrollPosition?: number) => void;
   onAnalyzeEmail: (emailId: string) => Promise<void>;
   onAnalyzeAll: () => Promise<void>;
   onTrashSelected: (emailIds: string[]) => void;
-  onViewEmailDetail: (emailId: string) => void;
+  onViewEmailDetail: (emailId: string, scrollPosition?: number) => void;
   isAnalyzing: string | null;
   isAnalyzingAll: boolean;
   isTrashingSelected: boolean;
+  initialScrollPosition?: number;
 }
 
 const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
@@ -38,9 +39,23 @@ const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
   isAnalyzing,
   isAnalyzingAll,
   isTrashingSelected,
+  initialScrollPosition = 0,
 }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [trashingIds, setTrashingIds] = useState<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (scrollContainerRef.current && initialScrollPosition > 0) {
+      scrollContainerRef.current.scrollTop = initialScrollPosition;
+    }
+  }, []);
+
+  // Helper to get current scroll position
+  const getCurrentScrollPosition = () => {
+    return scrollContainerRef.current?.scrollTop || 0;
+  };
 
   const sortedEmails = useMemo(() => {
     return [...senderGroup.emails].sort(
@@ -255,7 +270,7 @@ const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
       </div>
 
       {/* Email List */}
-      <div className="flex-1 overflow-y-auto space-y-2 pb-24">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-2 pb-24">
         {sortedEmails.map(email => {
           const isSelected = selectedIds.has(email.id);
           const analysis = emailAnalysis.get(email.id);
@@ -333,7 +348,7 @@ const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
                       onClick={e => {
                         e.stopPropagation();
                         if (!isTrashingSelected && !isBeingTrashed) {
-                          onViewEmailDetail(email.id);
+                          onViewEmailDetail(email.id, getCurrentScrollPosition());
                         }
                       }}
                       disabled={isTrashingSelected || isBeingTrashed}
@@ -439,7 +454,7 @@ const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
                   onClick={e => {
                     e.stopPropagation();
                     if (!isTrashingSelected && !isBeingTrashed) {
-                      onViewEmailDetail(email.id);
+                      onViewEmailDetail(email.id, getCurrentScrollPosition());
                     }
                   }}
                   disabled={isTrashingSelected || isBeingTrashed}

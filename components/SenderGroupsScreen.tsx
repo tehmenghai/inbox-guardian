@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { SenderGroup, SenderGroupAnalysis } from '../types';
 import { sortSenderGroups, filterSenderGroups, SortOption } from '../utils/emailGrouping';
 import {
@@ -17,13 +17,14 @@ import {
 
 interface SenderGroupsScreenProps {
   senderGroups: SenderGroup[];
-  onSelectSender: (senderEmail: string) => void;
+  onSelectSender: (senderEmail: string, scrollPosition?: number) => void;
   onAnalyzeGroup: (senderEmail: string) => Promise<void>;
   onTrashGroup: (senderEmail: string) => void;
   onTrashMultipleGroups: (senderEmails: string[]) => void;
   isAnalyzing: string | null;
   trashingGroupEmail: string | null;
   isTrashingMultiple: boolean;
+  initialScrollPosition?: number;
 }
 
 const SenderGroupsScreen: React.FC<SenderGroupsScreenProps> = ({
@@ -35,11 +36,25 @@ const SenderGroupsScreen: React.FC<SenderGroupsScreenProps> = ({
   isAnalyzing,
   trashingGroupEmail,
   isTrashingMultiple,
+  initialScrollPosition = 0,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('count');
   const [selectedSenders, setSelectedSenders] = useState<Set<string>>(new Set());
   const [trashingSenders, setTrashingSenders] = useState<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (scrollContainerRef.current && initialScrollPosition > 0) {
+      scrollContainerRef.current.scrollTop = initialScrollPosition;
+    }
+  }, []);
+
+  // Helper to get current scroll position
+  const getCurrentScrollPosition = () => {
+    return scrollContainerRef.current?.scrollTop || 0;
+  };
 
   const filteredAndSortedGroups = useMemo(() => {
     const filtered = filterSenderGroups(senderGroups, searchTerm);
@@ -200,7 +215,7 @@ const SenderGroupsScreen: React.FC<SenderGroupsScreenProps> = ({
       </div>
 
       {/* Sender List */}
-      <div className="flex-1 overflow-y-auto space-y-3 pb-24">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-3 pb-24">
         {filteredAndSortedGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-slate-400">
             <Mail className="w-12 h-12 mb-4" />
@@ -361,7 +376,7 @@ const SenderGroupsScreen: React.FC<SenderGroupsScreenProps> = ({
                       onClick={e => {
                         e.stopPropagation();
                         if (!isTrashingAny) {
-                          onSelectSender(group.senderEmail);
+                          onSelectSender(group.senderEmail, getCurrentScrollPosition());
                         }
                       }}
                       disabled={isTrashingAny}
@@ -514,7 +529,7 @@ const SenderGroupsScreen: React.FC<SenderGroupsScreenProps> = ({
                       onClick={e => {
                         e.stopPropagation();
                         if (!isTrashingAny) {
-                          onSelectSender(group.senderEmail);
+                          onSelectSender(group.senderEmail, getCurrentScrollPosition());
                         }
                       }}
                       disabled={isTrashingAny}

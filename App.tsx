@@ -39,6 +39,10 @@ const App: React.FC = () => {
   const [isLoadingEmailDetail, setIsLoadingEmailDetail] = useState(false);
   const [isAnalyzingEmailDetail, setIsAnalyzingEmailDetail] = useState(false);
 
+  // Scroll position restoration
+  const [senderGroupsScrollPos, setSenderGroupsScrollPos] = useState(0);
+  const [senderDetailScrollPos, setSenderDetailScrollPos] = useState(0);
+
   // Check for OAuth redirect or existing session on mount
   useEffect(() => {
     if (initialCheckDone) return;
@@ -148,12 +152,21 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleSelectSender = (senderEmail: string) => {
+  const handleSelectSender = (senderEmail: string, scrollPosition?: number) => {
+    // Save scroll position before navigating away
+    if (scrollPosition !== undefined) {
+      setSenderGroupsScrollPos(scrollPosition);
+    }
     setSelectedSenderEmail(senderEmail);
+    setSenderDetailScrollPos(0); // Reset email list scroll when selecting new sender
     setView('senderDetail');
   };
 
-  const handleBackToGroups = () => {
+  const handleBackToGroups = (scrollPosition?: number) => {
+    // Save email list scroll position (though not needed for back navigation)
+    if (scrollPosition !== undefined) {
+      setSenderDetailScrollPos(scrollPosition);
+    }
     setSelectedSenderEmail(null);
     setView('senderGroups');
   };
@@ -307,7 +320,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleViewEmailDetail = async (emailId: string) => {
+  const handleViewEmailDetail = async (emailId: string, scrollPosition?: number) => {
+    // Save scroll position before navigating to email detail
+    if (scrollPosition !== undefined) {
+      setSenderDetailScrollPos(scrollPosition);
+    }
+
     // Find the email in current sender group
     const selectedGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
     const basicEmail = selectedGroup?.emails.find(e => e.id === emailId);
@@ -423,6 +441,7 @@ const App: React.FC = () => {
             isAnalyzing={isAnalyzingGroup}
             trashingGroupEmail={trashingGroupEmail}
             isTrashingMultiple={isTrashingMultiple}
+            initialScrollPosition={senderGroupsScrollPos}
           />
         )}
 
@@ -439,6 +458,7 @@ const App: React.FC = () => {
               isAnalyzing={isAnalyzingEmail}
               isAnalyzingAll={isAnalyzingAll}
               isTrashingSelected={isTrashingSelected}
+              initialScrollPosition={senderDetailScrollPos}
             />
           ) : (
             // Fallback: redirect to sender groups if group not found
@@ -451,6 +471,7 @@ const App: React.FC = () => {
               isAnalyzing={isAnalyzingGroup}
               trashingGroupEmail={trashingGroupEmail}
               isTrashingMultiple={isTrashingMultiple}
+              initialScrollPosition={senderGroupsScrollPos}
             />
           )
         )}
