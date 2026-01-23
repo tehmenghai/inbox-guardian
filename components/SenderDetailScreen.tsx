@@ -45,16 +45,31 @@ const SenderDetailScreen: React.FC<SenderDetailScreenProps> = ({
   const [trashingIds, setTrashingIds] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Restore scroll position on mount
+  // Restore scroll position on mount (with delay to ensure content is rendered)
   useEffect(() => {
-    if (scrollContainerRef.current && initialScrollPosition > 0) {
-      scrollContainerRef.current.scrollTop = initialScrollPosition;
+    if (initialScrollPosition > 0) {
+      // Use requestAnimationFrame + setTimeout to ensure DOM is ready
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          // Try container scroll first, then window scroll
+          if (scrollContainerRef.current && scrollContainerRef.current.scrollHeight > scrollContainerRef.current.clientHeight) {
+            scrollContainerRef.current.scrollTop = initialScrollPosition;
+          } else {
+            window.scrollTo(0, initialScrollPosition);
+          }
+        }, 100);
+      });
     }
-  }, []);
+  }, [initialScrollPosition]);
 
-  // Helper to get current scroll position
+  // Helper to get current scroll position (check both container and window)
   const getCurrentScrollPosition = () => {
-    return scrollContainerRef.current?.scrollTop || 0;
+    // Check if container has scroll
+    if (scrollContainerRef.current && scrollContainerRef.current.scrollHeight > scrollContainerRef.current.clientHeight) {
+      return scrollContainerRef.current.scrollTop;
+    }
+    // Fall back to window scroll
+    return window.scrollY || document.documentElement.scrollTop;
   };
 
   const sortedEmails = useMemo(() => {
