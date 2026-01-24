@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ArrowRight, Settings, Copy, AlertCircle, Info, Mail, Key, ExternalLink, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Settings, Copy, AlertCircle, Info, Mail, Key, ExternalLink, ChevronDown, ChevronUp, Trash2, Tag } from 'lucide-react';
 import { MailboxProviderType } from '../types';
+import { APP_VERSION } from '../changelog';
+import ChangelogModal from './ChangelogModal';
 
 const YAHOO_CREDENTIALS_KEY = 'inbox_guardian_yahoo_credentials';
 
@@ -21,6 +23,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
   const [showYahooHelp, setShowYahooHelp] = useState(false);
   const [rememberYahoo, setRememberYahoo] = useState(true);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
 
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
@@ -323,7 +326,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
         </div>
       )}
 
-      <div className="mt-12 flex items-center gap-8 text-sm text-slate-400">
+      <div className="mt-12 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-sm text-slate-400">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-slate-300"></div>
           Read-only Mode Available
@@ -333,6 +336,23 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
           256-bit Encryption
         </div>
       </div>
+
+      {/* Version Display */}
+      <button
+        onClick={() => setShowChangelog(true)}
+        className="mt-6 flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-600 transition-colors"
+      >
+        <Tag className="w-3.5 h-3.5" />
+        <span>Version {APP_VERSION}</span>
+        <span className="text-slate-300">|</span>
+        <span className="underline underline-offset-2">View Changelog</span>
+      </button>
+
+      {/* Changelog Modal */}
+      <ChangelogModal
+        isOpen={showChangelog}
+        onClose={() => setShowChangelog(false)}
+      />
     </div>
   );
 };

@@ -36,6 +36,8 @@ interface EmailDetailScreenProps {
   analysis: EmailAIAnalysis | null;
   isLoading: boolean;
   isAnalyzing: boolean;
+  isTrashing?: boolean;
+  trashSuccess?: boolean;
 }
 
 const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
@@ -46,6 +48,8 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
   analysis,
   isLoading,
   isAnalyzing,
+  isTrashing = false,
+  trashSuccess = false,
 }) => {
   const [showFullAnalysis, setShowFullAnalysis] = useState(true);
   const [showReplyDraft, setShowReplyDraft] = useState(false);
@@ -509,18 +513,20 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
       </div>
 
       {/* Bottom Action Bar - Always visible */}
-      <div className="fixed bottom-4 sm:bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] sm:w-full max-w-xl z-20">
-        <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl">
+      <div className={`fixed bottom-4 sm:bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] sm:w-full max-w-xl z-20 transition-opacity ${isTrashing ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className={`text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-2xl transition-colors ${isTrashing ? 'bg-red-800' : 'bg-slate-900'}`}>
           {/* Mobile Layout */}
           <div className="flex sm:hidden items-center justify-between gap-2">
             <div className="flex flex-col min-w-0">
-              <span className="font-bold text-sm">Quick Actions</span>
+              <span className="font-bold text-sm">
+                {isTrashing ? 'Deleting...' : 'Quick Actions'}
+              </span>
               <span className="text-xs text-slate-400 truncate">
-                {analysis ? 'AI analysis complete' : 'Analyze for suggestions'}
+                {isTrashing ? 'Please wait' : analysis ? 'AI analysis complete' : 'Analyze for suggestions'}
               </span>
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              {!analysis && (
+              {!analysis && !isTrashing && (
                 <button
                   onClick={onAnalyze}
                   disabled={isAnalyzing}
@@ -535,10 +541,15 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
               )}
               <button
                 onClick={onTrash}
-                className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-1.5 text-sm font-medium"
+                disabled={isTrashing}
+                className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Trash2 className="w-4 h-4" />
-                Delete
+                {isTrashing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isTrashing ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
@@ -546,13 +557,15 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
           {/* Desktop Layout */}
           <div className="hidden sm:flex items-center justify-between">
             <div className="flex flex-col">
-              <span className="font-bold">Quick Actions</span>
+              <span className="font-bold">
+                {isTrashing ? 'Deleting Email...' : 'Quick Actions'}
+              </span>
               <span className="text-xs text-slate-400">
-                {analysis ? 'AI analysis complete' : 'Or analyze with AI for smart suggestions'}
+                {isTrashing ? 'Please wait while we move this email to trash' : analysis ? 'AI analysis complete' : 'Or analyze with AI for smart suggestions'}
               </span>
             </div>
             <div className="flex gap-2">
-              {!analysis && (
+              {!analysis && !isTrashing && (
                 <button
                   onClick={onAnalyze}
                   disabled={isAnalyzing}
@@ -568,15 +581,57 @@ const EmailDetailScreen: React.FC<EmailDetailScreenProps> = ({
               )}
               <button
                 onClick={onTrash}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-2"
+                disabled={isTrashing}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Trash2 className="w-4 h-4" />
-                Delete
+                {isTrashing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isTrashing ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Deletion Overlay */}
+      {(isTrashing || trashSuccess) && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className={`bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 mx-4 max-w-sm w-full transform transition-all duration-300 ${trashSuccess ? 'scale-100' : 'scale-100'}`}>
+            {trashSuccess ? (
+              <>
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center animate-bounce">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-1">Email Deleted</h3>
+                  <p className="text-sm text-slate-500">Moving to trash...</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                  <div className="relative">
+                    <Trash2 className="w-8 h-8 text-red-600" />
+                    <div className="absolute -top-1 -right-1">
+                      <Loader2 className="w-4 h-4 text-red-600 animate-spin" />
+                    </div>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-1">Deleting Email</h3>
+                  <p className="text-sm text-slate-500">Moving to trash...</p>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-red-600 h-1.5 rounded-full animate-pulse w-2/3"></div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

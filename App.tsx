@@ -1,12 +1,14 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   ShieldCheck,
-  LogOut
+  LogOut,
+  Info
 } from 'lucide-react';
 import { Email, ViewState, AIAnalysisResult, SenderGroup, MailboxProviderType, EmailDetail, EmailAIAnalysis } from './types';
 import { mailboxService } from './services/mailboxService';
 import { analyzeEmailsWithGemini, analyzeSenderGroup, analyzeEmailDetail } from './services/geminiService';
 import { groupEmailsBySender, removeTrashedEmailsFromGroups } from './utils/emailGrouping';
+import { APP_VERSION } from './changelog';
 
 // --- Components ---
 import AuthScreen from './components/AuthScreen';
@@ -15,6 +17,7 @@ import SenderGroupsScreen from './components/SenderGroupsScreen';
 import SenderDetailScreen from './components/SenderDetailScreen';
 import EmailDetailScreen from './components/EmailDetailScreen';
 import SuccessScreen from './components/SuccessScreen';
+import ChangelogModal from './components/ChangelogModal';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('auth');
@@ -38,6 +41,10 @@ const App: React.FC = () => {
   const [emailAIAnalysis, setEmailAIAnalysis] = useState<EmailAIAnalysis | null>(null);
   const [isLoadingEmailDetail, setIsLoadingEmailDetail] = useState(false);
   const [isAnalyzingEmailDetail, setIsAnalyzingEmailDetail] = useState(false);
+  const [emailTrashSuccess, setEmailTrashSuccess] = useState(false);
+
+  // Changelog modal state
+  const [showChangelog, setShowChangelog] = useState(false);
 
   // Scroll position restoration
   const [senderGroupsScrollPos, setSenderGroupsScrollPos] = useState(0);
@@ -373,6 +380,12 @@ const App: React.FC = () => {
     if (!selectedEmailId) return;
 
     await handleTrashEmails([selectedEmailId]);
+
+    // Show success state briefly before navigating back
+    setEmailTrashSuccess(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    setEmailTrashSuccess(false);
+
     // After trashing, go back to sender detail
     handleBackToSenderDetail();
   };
@@ -408,7 +421,15 @@ const App: React.FC = () => {
               <ShieldCheck className="w-6 h-6" />
               <span className="font-bold text-lg tracking-tight">Inbox Guardian</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <button
+                onClick={() => setShowChangelog(true)}
+                className="flex items-center gap-1.5 text-xs sm:text-sm text-slate-500 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 px-2 sm:px-3 py-1 rounded-full transition-colors"
+                title="View changelog"
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span className="font-medium">v{APP_VERSION}</span>
+              </button>
               <div className="hidden sm:flex items-center gap-2 text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                 Protected
@@ -488,6 +509,8 @@ const App: React.FC = () => {
             onBack={handleBackToSenderDetail}
             onAnalyze={handleAnalyzeEmailDetail}
             onTrash={handleTrashFromEmailDetail}
+            isTrashing={isTrashingSelected}
+            trashSuccess={emailTrashSuccess}
           />
         )}
 
@@ -495,6 +518,12 @@ const App: React.FC = () => {
           <SuccessScreen onHome={() => setView('senderGroups')} />
         )}
       </main>
+
+      {/* Changelog Modal */}
+      <ChangelogModal
+        isOpen={showChangelog}
+        onClose={() => setShowChangelog(false)}
+      />
     </div>
   );
 };
