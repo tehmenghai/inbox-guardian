@@ -381,12 +381,15 @@ const App: React.FC = () => {
     // Clear Gmail session token from storage
     sessionStorage.removeItem('gmail_access_token');
 
+    // Reset mailbox service state
+    mailboxService.isAuthenticated = false;
+
     setView('auth');
     setSenderGroups([]);
     setSelectedSenderEmail(null);
     setEmailAnalysisCache(new Map());
     setAuthError(null);
-    setInitialCheckDone(false);
+    // Don't reset initialCheckDone - we don't want to trigger auto-reconnect
   };
 
   const handleSuccess = () => {
