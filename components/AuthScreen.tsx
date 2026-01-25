@@ -105,7 +105,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
       <div className="mb-8 p-6 bg-indigo-50 rounded-full animate-bounce-slow">
-        <ShieldCheck className="w-16 h-16 text-indigo-600" />
+        {/* <ShieldCheck className="w-16 h-16 text-indigo-600" /> */}
+        <img
+          src="/logo_cropped.png"
+          alt="Inbox Guardian Logo"
+          class="w-16 h-16"
+        />
+
       </div>
       
       <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">

@@ -418,7 +418,13 @@ const App: React.FC = () => {
         <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2 text-indigo-600">
-              <ShieldCheck className="w-6 h-6" />
+              {/* <ShieldCheck className="w-6 h-6" /> */}
+              <img
+                src="/logo_cropped.png"
+                alt="Inbox Guardian Logo"
+                class="w-6 h-6"
+              />
+
               <span className="font-bold text-lg tracking-tight">Inbox Guardian</span>
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
