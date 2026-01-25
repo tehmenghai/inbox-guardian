@@ -3,6 +3,7 @@ import { ShieldCheck, ArrowRight, Settings, Copy, AlertCircle, Info, Mail, Key, 
 import { MailboxProviderType } from '../types';
 import { APP_VERSION } from '../changelog';
 import ChangelogModal from './ChangelogModal';
+import logo from '../assets/app_logo.png';
 
 const YAHOO_CREDENTIALS_KEY = 'inbox_guardian_yahoo_credentials';
 
@@ -106,11 +107,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onYahooLogin, error })
     <div className="flex flex-col items-center justify-center min-h-[80vh] text-center px-4">
       <div className="mb-8 p-6 bg-indigo-50 rounded-full animate-bounce-slow">
         {/* <ShieldCheck className="w-16 h-16 text-indigo-600" /> */}
-        <img
-          src="/logo_cropped.png"
-          alt="Inbox Guardian Logo"
-          class="w-16 h-16"
-        />
+         <img src={logo} alt="Logo" className="w-16 h-16" />
 
       </div>
       
