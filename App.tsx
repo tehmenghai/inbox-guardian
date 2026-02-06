@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   LogOut,
@@ -50,6 +50,23 @@ const App: React.FC = () => {
   // Scroll position restoration
   const [senderGroupsScrollPos, setSenderGroupsScrollPos] = useState(0);
   const [senderDetailScrollPos, setSenderDetailScrollPos] = useState(0);
+
+  // Ref to always access the latest senderGroups (avoids stale closure issues)
+  const senderGroupsRef = useRef<SenderGroup[]>(senderGroups);
+  useEffect(() => {
+    senderGroupsRef.current = senderGroups;
+  }, [senderGroups]);
+
+  // Navigate back to sender list if the selected sender group becomes empty after deletion
+  useEffect(() => {
+    if (view === 'senderDetail' && selectedSenderEmail) {
+      const currentGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
+      if (!currentGroup) {
+        setSelectedSenderEmail(null);
+        setView('senderGroups');
+      }
+    }
+  }, [senderGroups, selectedSenderEmail, view]);
 
   // Check for OAuth redirect or existing session on mount
   useEffect(() => {
@@ -107,7 +124,8 @@ const App: React.FC = () => {
       await mailboxService.connectYahoo(email, appPassword);
 
       setProcessingStage('Fetching emails...');
-      const fetchedEmails = await mailboxService.fetchUnreadEmails(300);
+      // Use smaller limit for Yahoo (IMAP is slow and drops connections)
+      const fetchedEmails = await mailboxService.fetchUnreadEmails(50);
 
       setProcessingStage('Grouping by sender...');
       const groups = groupEmailsBySender(fetchedEmails);
@@ -180,7 +198,8 @@ const App: React.FC = () => {
   };
 
   const handleAnalyzeGroup = async (senderEmail: string) => {
-    const group = senderGroups.find(g => g.senderEmail === senderEmail);
+    // Use ref to get latest senderGroups (avoids stale closure)
+    const group = senderGroupsRef.current.find(g => g.senderEmail === senderEmail);
     if (!group || group.analysis) return;
 
     setIsAnalyzingGroup(senderEmail);
@@ -201,7 +220,8 @@ const App: React.FC = () => {
   };
 
   const handleTrashGroup = async (senderEmail: string) => {
-    const group = senderGroups.find(g => g.senderEmail === senderEmail);
+    // Use ref to get latest senderGroups (avoids stale closure)
+    const group = senderGroupsRef.current.find(g => g.senderEmail === senderEmail);
     if (!group) return;
 
     setTrashingGroupEmail(senderEmail);
@@ -220,9 +240,10 @@ const App: React.FC = () => {
 
     try {
       // Collect all email IDs from all selected senders
+      // Use ref to get latest senderGroups (avoids stale closure)
       const allEmailIds: string[] = [];
       for (const senderEmail of senderEmails) {
-        const group = senderGroups.find(g => g.senderEmail === senderEmail);
+        const group = senderGroupsRef.current.find(g => g.senderEmail === senderEmail);
         if (group) {
           allEmailIds.push(...group.emails.map(e => e.id));
         }
@@ -239,7 +260,8 @@ const App: React.FC = () => {
   const handleAnalyzeEmail = async (emailId: string) => {
     if (emailAnalysisCache.has(emailId)) return;
 
-    const selectedGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
+    // Use ref to get latest senderGroups (avoids stale closure)
+    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
     const email = selectedGroup?.emails.find(e => e.id === emailId);
     if (!email) return;
 
@@ -258,7 +280,8 @@ const App: React.FC = () => {
   };
 
   const handleAnalyzeAllEmails = async () => {
-    const selectedGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
+    // Use ref to get latest senderGroups (avoids stale closure)
+    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
     if (!selectedGroup) return;
 
     const unanalyzedEmails = selectedGroup.emails.filter(e => !emailAnalysisCache.has(e.id));
@@ -297,9 +320,9 @@ const App: React.FC = () => {
       if (result.trashedCount > 0) {
         const trashedIds = emailIds.filter(id => !result.failedIds.includes(id));
 
-        // Remove trashed emails from sender groups
-        const updatedGroups = removeTrashedEmailsFromGroups(senderGroups, trashedIds);
-        setSenderGroups(updatedGroups);
+        // Use functional updater to always operate on the latest state,
+        // avoiding stale closure issues after async API calls
+        setSenderGroups(prev => removeTrashedEmailsFromGroups(prev, trashedIds));
 
         // Remove from analysis cache
         setEmailAnalysisCache(prev => {
@@ -307,15 +330,6 @@ const App: React.FC = () => {
           trashedIds.forEach(id => newCache.delete(id));
           return newCache;
         });
-
-        // If current sender group is now empty, go back to sender list
-        if (selectedSenderEmail) {
-          const currentGroup = updatedGroups.find(g => g.senderEmail === selectedSenderEmail);
-          if (!currentGroup) {
-            setSelectedSenderEmail(null);
-            setView('senderGroups');
-          }
-        }
       }
 
       if (result.failedIds.length > 0) {
@@ -334,8 +348,8 @@ const App: React.FC = () => {
       setSenderDetailScrollPos(scrollPosition);
     }
 
-    // Find the email in current sender group
-    const selectedGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
+    // Use ref to get latest senderGroups (avoids stale closure issues)
+    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
     const basicEmail = selectedGroup?.emails.find(e => e.id === emailId);
     if (!basicEmail) return;
 
