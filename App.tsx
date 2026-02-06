@@ -488,6 +488,7 @@ const App: React.FC = () => {
         {view === 'senderDetail' && (
           selectedGroup ? (
             <SenderDetailScreen
+              key={`${selectedGroup.senderEmail}-${selectedGroup.emailCount}`}
               senderGroup={selectedGroup}
               emailAnalysis={emailAnalysisCache}
               onBack={handleBackToGroups}

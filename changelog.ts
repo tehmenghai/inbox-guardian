@@ -8,9 +8,20 @@ export interface ChangelogEntry {
   }[];
 }
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.0.2';
 
 export const changelog: ChangelogEntry[] = [
+  {
+    version: '1.0.2',
+    date: '2026-02-06',
+    title: 'Yahoo Mail Bug Fix',
+    changes: [
+      {
+        type: 'fix',
+        description: 'Fixed Yahoo Mail email mismatch bug after deletion by forcing component re-render',
+      },
+    ],
+  },
   {
     version: '1.0.1',
     date: '2026-02-06',
