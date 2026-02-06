@@ -22,9 +22,12 @@ app.use(express.json());
 // Routes
 app.use('/api/yahoo', yahooRoutes);
 
+// Server version
+const SERVER_VERSION = '1.0.2';
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'inbox-guardian-server' });
+  res.json({ status: 'ok', service: 'inbox-guardian-server', version: SERVER_VERSION });
 });
 
 // Start server
