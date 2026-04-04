@@ -12,6 +12,15 @@ export interface MailboxProvider {
   fetchUnreadEmails(limit?: number): Promise<Email[]>;
 }
 
+interface YahooStatusResponse {
+  success: boolean;
+  connected: boolean;
+  hasSession: boolean;
+  reconnectable: boolean;
+  email: string;
+  error?: string;
+}
+
 // Yahoo backend API URL - Use environment variable for production
 const YAHOO_API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/yahoo';
 
@@ -193,6 +202,29 @@ class MailboxService implements MailboxProvider {
     console.log("[MailboxService] Disconnected from Yahoo Mail");
   }
 
+  isYahooAuthenticated(): boolean {
+    return !this.useMock && this.providerName === 'Yahoo Mail' && Boolean(this.yahooEmail);
+  }
+
+  async getYahooConnectionStatus(): Promise<YahooStatusResponse | null> {
+    if (!this.yahooEmail) {
+      return null;
+    }
+
+    const response = await fetchWithTimeout(
+      `${YAHOO_API_BASE}/status?email=${encodeURIComponent(this.yahooEmail)}`,
+      {},
+      10000
+    );
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to fetch Yahoo connection status');
+    }
+
+    return data as YahooStatusResponse;
+  }
+
   private async connectToRealGmail(): Promise<void> {
     console.log("[MailboxService] Initializing Real Google Auth with ID:", this.clientId);
 
@@ -328,41 +360,7 @@ class MailboxService implements MailboxProvider {
     try {
       console.log("[MailboxService] Fetching real emails from Gmail API...");
 
-      const response = await window.gapi.client.gmail.users.messages.list({
-        'userId': 'me',
-        'q': 'is:unread',
-        'maxResults': limit
-      });
-
-      const messages = response.result.messages || [];
-      const emails: Email[] = [];
-
-      // Batch fetch to avoid rate limiting (429 errors)
-      // Fetch 5 emails at a time with a small delay between batches
-      const BATCH_SIZE = 5;
-      const DELAY_MS = 100;
-
-      for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-        const batch = messages.slice(i, i + BATCH_SIZE);
-
-        const batchPromises = batch.map(async (msg: any) => {
-          const detail = await window.gapi.client.gmail.users.messages.get({
-            'userId': 'me',
-            'id': msg.id
-          });
-          return this.parseGmailMessage(detail.result);
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        emails.push(...batchResults);
-
-        // Add delay between batches to avoid rate limiting
-        if (i + BATCH_SIZE < messages.length) {
-          await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-        }
-      }
-
-      return emails;
+      return this.fetchGmailMessagesByQuery('is:unread', limit);
     } catch (error) {
       console.error("Error fetching Gmail messages", error);
       throw error;
@@ -403,48 +401,10 @@ class MailboxService implements MailboxProvider {
     return this.mockSearchBySender(senderEmail, limit);
   }
 
-  private async searchRealGmailBySender(senderEmail: string, limit: number): Promise<Email[]> {
+  private async searchRealGmailBySender(senderEmail: string, limit?: number): Promise<Email[]> {
     try {
       console.log(`[MailboxService] Searching Gmail for emails from: ${senderEmail}`);
-
-      const response = await window.gapi.client.gmail.users.messages.list({
-        'userId': 'me',
-        'q': `from:${senderEmail}`,
-        'maxResults': limit
-      });
-
-      const messages = response.result.messages || [];
-
-      if (messages.length === 0) {
-        return [];
-      }
-
-      const emails: Email[] = [];
-
-      // Batch fetch to avoid rate limiting
-      const BATCH_SIZE = 5;
-      const DELAY_MS = 100;
-
-      for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-        const batch = messages.slice(i, i + BATCH_SIZE);
-
-        const batchPromises = batch.map(async (msg: any) => {
-          const detail = await window.gapi.client.gmail.users.messages.get({
-            'userId': 'me',
-            'id': msg.id
-          });
-          return this.parseGmailMessage(detail.result);
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        emails.push(...batchResults);
-
-        if (i + BATCH_SIZE < messages.length) {
-          await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-        }
-      }
-
-      return emails;
+      return this.fetchGmailMessagesByQuery(`in:inbox from:${senderEmail}`, limit);
     } catch (error) {
       console.error("Error searching Gmail by sender:", error);
       throw error;
@@ -490,6 +450,57 @@ class MailboxService implements MailboxProvider {
       `Receipt from ${domain}`,
     ];
     return subjects[Math.floor(Math.random() * subjects.length)];
+  }
+
+  private async fetchGmailMessagesByQuery(query: string, limit?: number): Promise<Email[]> {
+    const emails: Email[] = [];
+    let pageToken: string | undefined;
+    let remaining = limit;
+    const pageSize = remaining ? Math.min(remaining, 100) : 100;
+
+    do {
+      const response = await window.gapi.client.gmail.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults: remaining ? Math.min(remaining, 100) : pageSize,
+        pageToken,
+      });
+
+      const messages = response.result.messages || [];
+      if (messages.length === 0) {
+        break;
+      }
+
+      const BATCH_SIZE = 10;
+      const DELAY_MS = 100;
+
+      for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+        const batch = messages.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(
+          batch.map(async (msg: any) => {
+            const detail = await window.gapi.client.gmail.users.messages.get({
+              userId: 'me',
+              id: msg.id,
+            });
+            return this.parseGmailMessage(detail.result);
+          })
+        );
+
+        emails.push(...batchResults);
+
+        if (i + BATCH_SIZE < messages.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+        }
+      }
+
+      if (remaining !== undefined) {
+        remaining -= messages.length;
+      }
+
+      pageToken = response.result.nextPageToken || undefined;
+    } while (pageToken && (remaining === undefined || remaining > 0));
+
+    return emails;
   }
 
   async trashEmails(emailIds: string[]): Promise<TrashOperationResult> {

@@ -184,11 +184,13 @@ router.get('/status', (req: Request, res: Response) => {
     });
   }
 
-  const connected = YahooImapService.isConnected(email);
+  const status = YahooImapService.getConnectionStatus(email);
 
   res.json({
     success: true,
-    connected,
+    connected: status.connected,
+    hasSession: status.hasSession,
+    reconnectable: status.reconnectable,
     email,
   });
 });

@@ -1,5 +1,6 @@
 import Imap from 'imap';
-import { simpleParser, ParsedMail } from 'mailparser';
+import { simpleParser } from 'mailparser';
+import { buildYahooMessageId, parseYahooMessageId } from './yahooMessageId';
 
 export interface YahooEmail {
   id: string;
@@ -32,10 +33,20 @@ interface ImapSession {
   connected: boolean;
 }
 
+export interface YahooConnectionStatus {
+  hasSession: boolean;
+  connected: boolean;
+  reconnectable: boolean;
+}
+
 // Store active sessions (in production, use Redis or similar)
 const sessions: Map<string, ImapSession> = new Map();
 
 export class YahooImapService {
+  private static logUidAction(action: string, email: string, details: Record<string, string | number | boolean>): void {
+    console.log(`[YahooIMAP] ${action} (${email})`, details);
+  }
+
   private static getSessionId(email: string): string {
     return email.toLowerCase();
   }
@@ -146,6 +157,25 @@ export class YahooImapService {
     return sessions.has(sessionId);
   }
 
+  static getConnectionStatus(email: string): YahooConnectionStatus {
+    const sessionId = this.getSessionId(email);
+    const session = sessions.get(sessionId);
+
+    if (!session) {
+      return {
+        hasSession: false,
+        connected: false,
+        reconnectable: false,
+      };
+    }
+
+    return {
+      hasSession: true,
+      connected: session.connected && session.imap.state === 'authenticated',
+      reconnectable: Boolean(session.appPassword),
+    };
+  }
+
   static async fetchEmails(email: string, limit: number = 100): Promise<YahooEmail[]> {
     const imap = await this.ensureConnected(email);
 
@@ -173,7 +203,7 @@ export class YahooImapService {
           struct: true,
         });
 
-        fetch.on('message', (msg, seqno) => {
+        fetch.on('message', (msg) => {
           let header = '';
           let body = '';
           const emailData: Partial<YahooEmail> = {
@@ -203,8 +233,12 @@ export class YahooImapService {
           });
 
           msg.once('end', () => {
+            if (!uid) {
+              return;
+            }
+
             // Use UID for stable ID instead of sequence number
-            emailData.id = `yahoo-uid-${uid}`;
+            emailData.id = buildYahooMessageId(uid);
 
             // Parse header
             const fromMatch = header.match(/From:\s*(.+)/i);
@@ -224,7 +258,7 @@ export class YahooImapService {
             emailData.date = dateMatch ? new Date(dateMatch[1]).toISOString() : new Date().toISOString();
             emailData.snippet = body.substring(0, 200).replace(/\s+/g, ' ').trim() || '';
 
-            if (emailData.senderEmail && uid) {
+            if (emailData.senderEmail) {
               emails.push(emailData as YahooEmail);
             }
           });
@@ -245,19 +279,8 @@ export class YahooImapService {
 
   static async fetchEmailDetail(email: string, messageId: string): Promise<YahooEmailDetail> {
     const imap = await this.ensureConnected(email);
-
-    // Extract UID from ID (format: yahoo-uid-123 or legacy yahoo-123)
-    let uid: number;
-    if (messageId.startsWith('yahoo-uid-')) {
-      uid = parseInt(messageId.replace('yahoo-uid-', ''), 10);
-    } else {
-      // Legacy format support (will be inaccurate but maintains backwards compatibility)
-      uid = parseInt(messageId.replace('yahoo-', ''), 10);
-    }
-
-    if (isNaN(uid)) {
-      throw new Error(`Invalid message ID: ${messageId}`);
-    }
+    const { uid, isLegacy } = parseYahooMessageId(messageId);
+    this.logUidAction('Fetch detail requested', email, { messageId, uid, isLegacy });
 
     return new Promise((resolve, reject) => {
       imap.openBox('INBOX', false, (err, box) => {
@@ -272,9 +295,14 @@ export class YahooImapService {
           struct: true,
         });
 
+        let settled = false;
+        const matches: YahooEmailDetail[] = [];
+        const parseTasks: Promise<void>[] = [];
+
         fetch.on('message', (msg) => {
           let rawEmail = '';
           let isRead = false;
+          let fetchedUid: number | undefined;
 
           msg.on('body', (stream) => {
             stream.on('data', (chunk) => {
@@ -283,15 +311,20 @@ export class YahooImapService {
           });
 
           msg.once('attributes', (attrs) => {
+            fetchedUid = attrs.uid;
             isRead = attrs.flags?.includes('\\Seen') ?? false;
           });
 
           msg.once('end', async () => {
-            try {
+            const parseTask = (async () => {
+              if (fetchedUid !== uid) {
+                return;
+              }
+
               const parsed = await simpleParser(rawEmail);
 
-              const emailDetail: YahooEmailDetail = {
-                id: messageId,
+              matches.push({
+                id: buildYahooMessageId(uid),
                 subject: parsed.subject || '(No Subject)',
                 sender: parsed.from?.value[0]?.name || parsed.from?.value[0]?.address?.split('@')[0] || 'Unknown',
                 senderEmail: parsed.from?.value[0]?.address || '',
@@ -314,17 +347,63 @@ export class YahooImapService {
                   mimeType: att.contentType || 'application/octet-stream',
                   size: att.size || 0,
                 })),
-              };
+              });
+            })();
 
-              resolve(emailDetail);
-            } catch (parseErr: any) {
-              reject(new Error(`Failed to parse email: ${parseErr.message}`));
-            }
+            parseTasks.push(parseTask);
           });
         });
 
         fetch.once('error', (fetchErr) => {
-          reject(new Error(`Fetch error: ${fetchErr.message}`));
+          if (!settled) {
+            settled = true;
+            reject(new Error(`Fetch error: ${fetchErr.message}`));
+          }
+        });
+
+        fetch.once('end', async () => {
+          if (settled) {
+            return;
+          }
+
+          try {
+            const parseResults = await Promise.allSettled(parseTasks);
+            const parseFailure = parseResults.find(
+              (result): result is PromiseRejectedResult => result.status === 'rejected'
+            );
+
+            if (parseFailure) {
+              settled = true;
+              const reason = parseFailure.reason as Error;
+              reject(new Error(`Failed to parse email: ${reason.message}`));
+              return;
+            }
+          } catch (parseErr: any) {
+            settled = true;
+            reject(new Error(`Failed to parse email: ${parseErr.message}`));
+            return;
+          }
+
+          this.logUidAction('Fetch detail completed', email, {
+            messageId,
+            uid,
+            matches: matches.length,
+          });
+
+          if (matches.length === 0) {
+            settled = true;
+            reject(new Error(`Yahoo message not found for UID ${uid}`));
+            return;
+          }
+
+          if (matches.length > 1) {
+            settled = true;
+            reject(new Error(`Yahoo message fetch returned multiple matches for UID ${uid}`));
+            return;
+          }
+
+          settled = true;
+          resolve(matches[0]);
         });
       });
     });
@@ -344,19 +423,8 @@ export class YahooImapService {
 
         for (const msgId of messageIds) {
           try {
-            // Extract UID from ID (format: yahoo-uid-123 or legacy yahoo-123)
-            let uid: number;
-            if (msgId.startsWith('yahoo-uid-')) {
-              uid = parseInt(msgId.replace('yahoo-uid-', ''), 10);
-            } else {
-              // Legacy format support
-              uid = parseInt(msgId.replace('yahoo-', ''), 10);
-            }
-
-            if (isNaN(uid)) {
-              failedIds.push(msgId);
-              continue;
-            }
+            const { uid, isLegacy } = parseYahooMessageId(msgId);
+            this.logUidAction('Trash requested', email, { messageId: msgId, uid, isLegacy });
 
             await new Promise<void>((resolveMove) => {
               // Move to Trash folder using UID (Yahoo uses "Trash" folder)
@@ -366,12 +434,14 @@ export class YahooImapService {
                   failedIds.push(msgId);
                   resolveMove(); // Don't reject, continue with others
                 } else {
+                  this.logUidAction('Trash succeeded', email, { messageId: msgId, uid });
                   trashedIds.push(msgId);
                   resolveMove();
                 }
               });
             });
           } catch (e) {
+            console.error(`[YahooIMAP] Failed to parse message ID for trash: ${msgId}`, e);
             failedIds.push(msgId);
           }
         }

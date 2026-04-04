@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  ShieldCheck,
   LogOut,
   Info
 } from 'lucide-react';
@@ -25,6 +24,7 @@ const App: React.FC = () => {
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [senderGroups, setSenderGroups] = useState<SenderGroup[]>([]);
   const [selectedSenderEmail, setSelectedSenderEmail] = useState<string | null>(null);
+  const [selectedSenderGroup, setSelectedSenderGroup] = useState<SenderGroup | null>(null);
   const [emailAnalysisCache, setEmailAnalysisCache] = useState<Map<string, AIAnalysisResult>>(new Map());
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState<string>('');
@@ -57,12 +57,24 @@ const App: React.FC = () => {
     senderGroupsRef.current = senderGroups;
   }, [senderGroups]);
 
+  const selectedSenderGroupRef = useRef<SenderGroup | null>(selectedSenderGroup);
+  useEffect(() => {
+    selectedSenderGroupRef.current = selectedSenderGroup;
+  }, [selectedSenderGroup]);
+
+  useEffect(() => {
+    if (!selectedSenderEmail) return;
+    const currentGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail) || null;
+    setSelectedSenderGroup(currentGroup);
+  }, [senderGroups, selectedSenderEmail]);
+
   // Navigate back to sender list if the selected sender group becomes empty after deletion
   useEffect(() => {
     if (view === 'senderDetail' && selectedSenderEmail) {
       const currentGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
       if (!currentGroup) {
         setSelectedSenderEmail(null);
+        setSelectedSenderGroup(null);
         setView('senderGroups');
       }
     }
@@ -81,6 +93,64 @@ const App: React.FC = () => {
       setInitialCheckDone(true);
     }
   }, [initialCheckDone]);
+
+  const handleYahooSessionExpired = useCallback(async (message?: string) => {
+    try {
+      await mailboxService.disconnectYahoo();
+    } catch (error) {
+      console.error('Error disconnecting expired Yahoo session:', error);
+    }
+
+    setSenderGroups([]);
+    setSelectedSenderEmail(null);
+    setSelectedSenderGroup(null);
+    setSelectedEmailId(null);
+    setEmailDetail(null);
+    setEmailAIAnalysis(null);
+    setEmailAnalysisCache(new Map());
+    setIsProcessing(false);
+    setIsTrashingSelected(false);
+    setIsTrashingMultiple(false);
+    setAuthError(message || 'Yahoo Mail connection was lost. Please connect again.');
+    setView('auth');
+  }, []);
+
+  useEffect(() => {
+    if (!mailboxService.isYahooAuthenticated() || view === 'auth' || view === 'scanning') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const checkStatus = async () => {
+      try {
+        const status = await mailboxService.getYahooConnectionStatus();
+        if (!status || cancelled) {
+          return;
+        }
+
+        if (!status.connected) {
+          await handleYahooSessionExpired('Yahoo Mail connection ended. Please connect again.');
+        }
+      } catch (error: any) {
+        if (cancelled) {
+          return;
+        }
+        console.error('Yahoo status check failed:', error);
+        await handleYahooSessionExpired(error.message || 'Yahoo Mail connection was lost. Please connect again.');
+      }
+    };
+
+    void checkStatus();
+    const intervalId = window.setInterval(() => {
+      void checkStatus();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [handleYahooSessionExpired, view]);
 
   // Separate function for scanning after OAuth redirect (already authenticated)
   const startScanningAfterAuth = async () => {
@@ -183,7 +253,9 @@ const App: React.FC = () => {
     if (scrollPosition !== undefined) {
       setSenderGroupsScrollPos(scrollPosition);
     }
+    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === senderEmail) || null;
     setSelectedSenderEmail(senderEmail);
+    setSelectedSenderGroup(selectedGroup);
     setSenderDetailScrollPos(0); // Reset email list scroll when selecting new sender
     setView('senderDetail');
   };
@@ -194,6 +266,7 @@ const App: React.FC = () => {
       setSenderDetailScrollPos(scrollPosition);
     }
     setSelectedSenderEmail(null);
+    setSelectedSenderGroup(null);
     setView('senderGroups');
   };
 
@@ -261,8 +334,7 @@ const App: React.FC = () => {
     if (emailAnalysisCache.has(emailId)) return;
 
     // Use ref to get latest senderGroups (avoids stale closure)
-    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
-    const email = selectedGroup?.emails.find(e => e.id === emailId);
+    const email = selectedSenderGroupRef.current?.emails.find(e => e.id === emailId);
     if (!email) return;
 
     setIsAnalyzingEmail(emailId);
@@ -281,7 +353,7 @@ const App: React.FC = () => {
 
   const handleAnalyzeAllEmails = async () => {
     // Use ref to get latest senderGroups (avoids stale closure)
-    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
+    const selectedGroup = selectedSenderGroupRef.current;
     if (!selectedGroup) return;
 
     const unanalyzedEmails = selectedGroup.emails.filter(e => !emailAnalysisCache.has(e.id));
@@ -315,6 +387,7 @@ const App: React.FC = () => {
     setIsTrashingSelected(true);
 
     try {
+      const currentSelectedGroup = selectedSenderGroupRef.current;
       const result = await mailboxService.trashEmails(emailIds);
 
       if (result.trashedCount > 0) {
@@ -323,6 +396,10 @@ const App: React.FC = () => {
         // Use functional updater to always operate on the latest state,
         // avoiding stale closure issues after async API calls
         setSenderGroups(prev => removeTrashedEmailsFromGroups(prev, trashedIds));
+        setSelectedSenderGroup(prev => {
+          if (!prev) return prev;
+          return removeTrashedEmailsFromGroups([prev], trashedIds)[0] || null;
+        });
 
         // Remove from analysis cache
         setEmailAnalysisCache(prev => {
@@ -337,6 +414,9 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error trashing emails:', error);
+      if (mailboxService.isYahooAuthenticated()) {
+        await handleYahooSessionExpired(error instanceof Error ? error.message : 'Yahoo Mail connection was lost. Please connect again.');
+      }
     } finally {
       setIsTrashingSelected(false);
     }
@@ -349,8 +429,7 @@ const App: React.FC = () => {
     }
 
     // Use ref to get latest senderGroups (avoids stale closure issues)
-    const selectedGroup = senderGroupsRef.current.find(g => g.senderEmail === selectedSenderEmail);
-    const basicEmail = selectedGroup?.emails.find(e => e.id === emailId);
+    const basicEmail = selectedSenderGroupRef.current?.emails.find(e => e.id === emailId);
     if (!basicEmail) return;
 
     setSelectedEmailId(emailId);
@@ -364,6 +443,9 @@ const App: React.FC = () => {
       setEmailDetail(detail);
     } catch (error) {
       console.error('Error fetching email detail:', error);
+      if (mailboxService.isYahooAuthenticated()) {
+        await handleYahooSessionExpired(error instanceof Error ? error.message : 'Yahoo Mail connection was lost. Please connect again.');
+      }
     } finally {
       setIsLoadingEmailDetail(false);
     }
@@ -415,6 +497,10 @@ const App: React.FC = () => {
     setView('auth');
     setSenderGroups([]);
     setSelectedSenderEmail(null);
+    setSelectedSenderGroup(null);
+    setSelectedEmailId(null);
+    setEmailDetail(null);
+    setEmailAIAnalysis(null);
     setEmailAnalysisCache(new Map());
     setAuthError(null);
     // Don't reset initialCheckDone - we don't want to trigger auto-reconnect
@@ -424,7 +510,7 @@ const App: React.FC = () => {
     setView('success');
   };
 
-  const selectedGroup = senderGroups.find(g => g.senderEmail === selectedSenderEmail);
+  const selectedGroup = selectedSenderGroup;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">

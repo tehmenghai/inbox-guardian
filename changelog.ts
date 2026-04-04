@@ -8,9 +8,24 @@ export interface ChangelogEntry {
   }[];
 }
 
-export const APP_VERSION = '1.0.2';
+export const APP_VERSION = '1.0.3';
 
 export const changelog: ChangelogEntry[] = [
+  {
+    version: '1.0.3',
+    date: '2026-04-04',
+    title: 'Yahoo Session Stability',
+    changes: [
+      {
+        type: 'fix',
+        description: 'Redirect Yahoo users back to login when the IMAP connection is lost instead of showing stale mailbox data',
+      },
+      {
+        type: 'improvement',
+        description: 'Improved Yahoo session status handling and reconnect guidance in the UI',
+      },
+    ],
+  },
   {
     version: '1.0.2',
     date: '2026-02-06',
